@@ -1,0 +1,46 @@
+* DONE Supply int to prettyPrint to add a uniform offset
+* DONE Move symbol table to AST
+** Generate code should take a symbol table as well, maybe on the first pass or do a second pass
+** Need to look at llvm AST vs Symbol Table to see what stage it is generated in
+   It seems weird to generate it in the AST since now all the info is there, unless I create a
+   differnt AST node for static vs field etc
+
+=== Actionable ===  
+* DONE Make Rvalue cast a part of statements and expressions -- casting a literal as an rvalue should be an no-op
+* DONE Report errors from the separate threads
+* DONE Handle errors from Result type
+* DONE Report undefined function/class if it does not exist once we run the code
+* DONE Copy function arguments over to memory and write test with arguments
+* DONE Implement builtins
+** DONE Array
+** DONE String
+** DONE Memory - malloc and free equivalents
+
+* TODO CompilationEngine test overhaul - write tests for compilation engine and compare the ASTs
+** TODO Write function to compare ASTs
+
+=== Nice to have ===
+* TODO Look at how llvm deals with rvalue loads
+* TODO Let users inspect and iterate over the ast from the interpreter
+* DONE Delete reliance on value symbol table to look up names
+* DONE Compile directory of multiple files
+* TODO Operator precedence
+* TODO Type error reporting
+* TODO Better warnings for unexpected tokens
+* TODO Instrument runtime to check for missing allocations
+** TODO Implement a checker for allocations of class types as a pass
+* DONE Remove reliance on macros - should just inherit
+* DONE Create a runtime that can be either the Compiler or the Interpreter
+** This should register the builtins and be what owns the LLVMGenerator/PrettyPrinter/Other visitors
+** Runtime will be the base class while the compiler and interpreter are the derived
+** 
+
+* TODO Make Cmake module dependencies
+* TODO Reorg src and include directories
+* TODO Write test tools to iterate over the llvm ir using visitors
+* TODO Unit test revamping 
+* TODO Unit tests for Runtime
+* DONE Find a better way to handle unresolved functions
+  The return type of the function is not known at the time that I write the expression, so it may be
+  that I need to propagate up the incompleteness of the function? Or I can do an initial pass first
+  before moving to the definitions

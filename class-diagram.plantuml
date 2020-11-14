@@ -1,0 +1,12 @@
+@startuml
+
+down to up direction
+
+Stmt --|> Node
+IfStmt --|> Stmt
+WhileStmt --|> Stmt
+BinaryStmt --|> Stmt
+RelStmt --|> BinaryStmt
+ArithmeticStmt --|> BinaryStmt
+
+@enduml

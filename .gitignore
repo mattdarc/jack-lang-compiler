@@ -1,0 +1,9 @@
+bin
+*.o
+*.test
+*.log
+debug
+release
+.vscode
+.ccls-cache
+compile_commands.json
