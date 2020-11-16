@@ -13,10 +13,11 @@ namespace jcc {
 using NodePtr = std::unique_ptr<jcc::ast::Node>;
 using ASTList = std::vector<NodePtr>;
 
-// Facade for the code generation and JIT of a Jack program
+// Facade for the code generation and JIT of a Jack program. TODO This should not be a
+// singleton, but should own compilers and interpreters
 class Runtime {
 public:
-  static Runtime &instance(std::istream &is, std::ostream &os);
+  static void init(std::istream &is, std::ostream &os);
   static Runtime &instance();
 
   std::istream &istream() { return m_is; }

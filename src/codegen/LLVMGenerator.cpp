@@ -1,3 +1,5 @@
+#undef NDEBUG
+
 #include "LLVMGenerator.hpp"
 
 #include "NameMangling.hpp"

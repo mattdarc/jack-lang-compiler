@@ -209,6 +209,8 @@ void registerInput(llvm::Module *module) {
   InpCls.addFunction(InputClass::readInt, "readInt");
 }
 
+static std::unique_ptr<Runtime> RTInstance;
+
 }  // namespace
 
 namespace jcc {
@@ -243,10 +245,9 @@ void Runtime::registerBuiltins() {
   registerInput(m_gen->module());
 }
 
-Runtime &Runtime::instance() { return instance(std::cin, std::cout); }
-Runtime &Runtime::instance(std::istream &is, std::ostream &os) {
-  static Runtime inst(is, os);
-  return inst;
+Runtime &Runtime::instance() { return *RTInstance; }
+void Runtime::init(std::istream &is, std::ostream &os) {
+  RTInstance.reset(new Runtime(is, os));
 }
 
 llvm::Module &Runtime::module() {

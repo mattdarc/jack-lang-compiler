@@ -43,6 +43,10 @@ macro(define_jcc_llvm_lib lib)
   target_include_directories(${lib} SYSTEM PRIVATE "${LLVM_INCLUDE_DIRS}")
 endmacro()
 
+# 3p
+## googletest
+add_subdirectory(3p/googletest)
+
 # Sources
 add_subdirectory(src)
 

@@ -1,3 +1,6 @@
 [submodule "3p/Catch2"]
 	path = 3p/Catch2
 	url = https://github.com/catchorg/Catch2
+[submodule "3p/googletest"]
+	path = 3p/googletest
+	url = https://github.com/google/googletest.git
