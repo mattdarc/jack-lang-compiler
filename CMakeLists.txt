@@ -21,31 +21,13 @@ if(CCACHE_PROGRAM)
   set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE "${CCACHE_PROGRAM}")
 endif()
 
-# System llvm
+# 3p
+add_subdirectory(3p/googletest)
+
 find_package(LLVM REQUIRED CONFIG)
 add_definitions(${LLVM_DEFINITIONS})
-llvm_map_components_to_libnames(LLVM_LIBS support core nativecodegen transformutils orcjit native)
-message("-- Found LLVM libs - ${LLVM_LIBS}")
-
-add_compile_options("$<$<CONFIG:DEBUG>:${DEBUG_CC_OPTIONS}>")
-add_compile_options("$<$<CONFIG:RELEASE>:${RELEASE_CC_OPTIONS}>")
-# add_link_options("LINKER:-fsanitize=address")
-
-macro(define_jcc_lib lib)
-  file(GLOB SOURCES *.cpp)
-  add_library(${lib} STATIC ${SOURCES})
-  set_target_properties(${lib} PROPERTIES PREFIX "libjcc")
-  target_include_directories(${lib} PUBLIC "${PROJECT_SOURCE_DIR}/include")
-endmacro()
-
-macro(define_jcc_llvm_lib lib)
-  define_jcc_lib(${lib})
-  target_include_directories(${lib} SYSTEM PRIVATE "${LLVM_INCLUDE_DIRS}")
-endmacro()
-
-# 3p
-## googletest
-add_subdirectory(3p/googletest)
+llvm_map_components_to_libnames(llvm_libs support core nativecodegen transformutils orcjit native)
+message("-- Found LLVM libs - ${llvm_libs}")
 
 # Sources
 add_subdirectory(src)
