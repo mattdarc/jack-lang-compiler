@@ -6,10 +6,15 @@
 #include <type_traits>
 
 #include "NameMangling.hpp"
+#include "Runtime.hpp"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
+
+namespace jcc {
+class Runtime;
+}
 
 namespace jcc::builtin {
 
@@ -73,26 +78,58 @@ public:
                          builtin::generateName(class_name, FuncName), M);
     auto BB = BasicBlock::Create(Ctx, "entry", Func);
     Builder.SetInsertPoint(BB);
-    auto Addr = ConstantInt::get(Type::getInt64Ty(Ctx),
-                                 reinterpret_cast<intptr_t>(FuncAddr));
-    auto Callable = Builder.CreateIntToPtr(Addr, FuncTy->getPointerTo());
 
     std::vector<llvm::Value *> Args;
     Args.reserve(FuncTy->getNumParams());
-    std::transform(Func->arg_begin(), Func->arg_end(), std::back_inserter(Args),
-                   [&](auto &arg) {
-                     auto FwdArg = Builder.CreateAlloca(arg.getType());
-                     Builder.CreateStore(&arg, FwdArg);
-                     return Builder.CreateLoad(FwdArg);
-                   });
+    ForwardArgs(Builder, Func->args(), Args);
 
-    auto RetVal = Builder.CreateCall(FuncTy, Callable, Args);
-    if constexpr (!std::is_same_v<Ret, void>) {
-      Builder.CreateRet(RetVal);
-    } else {
-      Builder.CreateRetVoid();
-    }
+    CreateCallBuiltin(Builder, FuncTy, Args, FuncAddr);
     return Func;
+  }
+
+  template <typename Ret, typename RT, typename... Ts>
+  llvm::Function *addRuntimeFunction(Runtime *JackRT,
+                                     Ret (*FuncAddr)(RT, Ts...),
+                                     const std::string &FuncName) {
+    using namespace llvm;
+    using ::jcc::builtin::to_llvm;
+
+    auto &Ctx = M->getContext();
+    IRBuilder<> Builder{Ctx};
+    auto Int32PtrTy = Type::getInt32Ty(M->getContext())->getPointerTo();
+    auto Int64Ty = Type::getInt64Ty(M->getContext());
+
+    // Get the type of the function that wraps the builtin
+    auto RetTy = to_llvm<Ret>::doit(M);
+    auto ParamTy = to_llvm<Ts...>::doit(M);
+    auto WrapperTy = FunctionType::get(RetTy, ParamTy, false);
+
+    // Get the type of the builtin function
+    std::vector<Type *> ActParamTys;
+    ActParamTys.reserve(WrapperTy->getNumParams() + 1);
+    ActParamTys.push_back(Int32PtrTy);
+    std::copy(WrapperTy->param_begin(), WrapperTy->param_end(),
+              std::back_inserter(ActParamTys));
+    auto FuncTy = FunctionType::get(RetTy, ActParamTys, false);
+
+    // Create the function to be called as the wrapper
+    auto WrapperFunc =
+        Function::Create(WrapperTy, Function::ExternalLinkage,
+                         builtin::generateName(class_name, FuncName), M);
+    auto BB = BasicBlock::Create(Ctx, "entry", WrapperFunc);
+    Builder.SetInsertPoint(BB);
+
+    // Forward the wrapper arguments to the builtin, the first argument being
+    // the runtime address
+    std::vector<llvm::Value *> Args;
+    Args.reserve(FuncTy->getNumParams());
+    Args.push_back(ConstantExpr::getIntToPtr(
+        ConstantInt::get(Int64Ty, reinterpret_cast<intptr_t>(JackRT)),
+        Int32PtrTy));
+    ForwardArgs(Builder, WrapperFunc->args(), Args);
+
+    CreateCallBuiltin(Builder, FuncTy, Args, FuncAddr);
+    return WrapperFunc;
   }
 
   static llvm::Type *marshalling(llvm::Module *M) {
@@ -111,6 +148,36 @@ protected:
 
 private:
   llvm::Module *M;
+
+  // Create a call to the builtin function at the address with the provided
+  // function type and arguments
+  template <typename FuncType>
+  void CreateCallBuiltin(llvm::IRBuilder<> &Builder, llvm::FunctionType *FuncTy,
+                         llvm::ArrayRef<llvm::Value *> Args,
+                         FuncType FuncAddr) {
+    using namespace llvm;
+
+    auto Addr = ConstantInt::get(Type::getInt64Ty(Builder.getContext()),
+                                 reinterpret_cast<intptr_t>(FuncAddr));
+    auto Callable = Builder.CreateIntToPtr(Addr, FuncTy->getPointerTo());
+    auto RetVal = Builder.CreateCall(FuncTy, Callable, Args);
+    if (!FuncTy->getReturnType()->isVoidTy()) {
+      Builder.CreateRet(RetVal);
+    } else {
+      Builder.CreateRetVoid();
+    }
+  }
+
+  template <typename InRange, typename OutRange>
+  void ForwardArgs(llvm::IRBuilder<> &Builder, const InRange &FromArgs,
+                   OutRange &ToArgs) {
+    std::transform(FromArgs.begin(), FromArgs.end(), std::back_inserter(ToArgs),
+                   [&](auto &arg) {
+                     auto FwdArg = Builder.CreateAlloca(arg.getType());
+                     Builder.CreateStore(&arg, FwdArg);
+                     return Builder.CreateLoad(FwdArg);
+                   });
+  }
 };
 
 namespace detail {
@@ -121,9 +188,6 @@ struct is_instantiable : std::false_type {};
 template <typename T>
 struct is_instantiable<T, std::enable_if_t<T::is_instantiable>>
     : std::true_type {};
-
-template <typename T>
-static constexpr bool is_instantiable_v = is_instantiable<T>::value;
 
 template <>
 struct to_llvm_helper<> {
@@ -176,8 +240,9 @@ template <typename, typename = void>
 struct to_llvm_entry;
 
 template <typename TypeOrTypeTraits>
-struct to_llvm_entry<TypeOrTypeTraits,
-                     std::enable_if_t<!is_instantiable_v<TypeOrTypeTraits>>> {
+struct to_llvm_entry<
+    TypeOrTypeTraits,
+    std::enable_if_t<!is_instantiable<TypeOrTypeTraits>::value>> {
   // Default type specialization
   static TypeClarifier<TypeOrTypeTraits> doit(llvm::Module *M) {
     return detail::to_llvm_helper<TypeOrTypeTraits>::doit(M);
@@ -185,8 +250,9 @@ struct to_llvm_entry<TypeOrTypeTraits,
 };
 
 template <typename TypeOrTypeTraits>
-struct to_llvm_entry<TypeOrTypeTraits,
-                     std::enable_if_t<is_instantiable_v<TypeOrTypeTraits>>> {
+struct to_llvm_entry<
+    TypeOrTypeTraits,
+    std::enable_if_t<is_instantiable<TypeOrTypeTraits>::value>> {
   // Class type specialization
   static TypeClarifier<TypeOrTypeTraits> doit(llvm::Module *M) {
     return BuiltinRegistrar<TypeOrTypeTraits>::marshalling(M);
@@ -197,6 +263,7 @@ struct to_llvm_entry<TypeOrTypeTraits,
 
 template <typename... Ts>
 struct to_llvm {
+  // Issue compiling some instantiations on gcc requires this attribute
   static TypeClarifier<Ts...> doit(llvm::Module *M __attribute__((unused))) {
     return {detail::to_llvm_entry<Ts>::doit(M)...};
   }

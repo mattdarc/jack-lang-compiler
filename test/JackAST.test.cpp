@@ -12,31 +12,28 @@ using namespace jcc::ast;
 
 class LLVMFixture : public ::testing::Test {
 protected:
-  void SetUp() override {
-    Runtime::init(TestInput, TestOutput);
-    Runtime::instance().reset();
-  }
+  // void SetUp() override { JackRuntime = Runtime{TestInput, TestOutput}; }
   std::unique_ptr<ClassDecl> rootClass = std::make_unique<ClassDecl>("Main");
   Builder astBuilder = Builder().setClass(rootClass.get());
   FunctionDecl *main = astBuilder.CreateStaticDecl("main", "int");
   Block *block = main->getDefinition();
   std::istringstream TestInput;
   std::ostringstream TestOutput;
+  Runtime JackRuntime{TestInput, TestOutput};
 
   template <typename IRType>
-  static IRType *CheckCodegen(std::unique_ptr<Node> node) {
+  IRType *CheckCodegen(std::unique_ptr<Node> node) {
     using namespace llvm;
     const std::string Desc = PrettyPrinter::print(*node);
 
-    auto &rt = Runtime::instance();
-    rt.addAST(std::move(node));
-    auto result = dyn_cast<IRType>(rt.codegen());
+    JackRuntime.addAST(std::move(node));
+    auto result = dyn_cast<IRType>(JackRuntime.codegen());
     assert(result && "Incorrect type");
 
     return result;
   }
 
-  static void CheckCodegen(std::unique_ptr<Node> node) {
+  void CheckCodegen(std::unique_ptr<Node> node) {
     CheckCodegen<llvm::Value>(std::move(node));
   }
 
@@ -53,9 +50,7 @@ protected:
     }
   }
 
-  auto CheckExecution(int ExpVal) {
-    EXPECT_EQ(Runtime::instance().run(), ExpVal);
-  }
+  auto CheckExecution(int ExpVal) { EXPECT_EQ(JackRuntime.run(), ExpVal); }
 };
 
 TEST_F(LLVMFixture, StrConst) {
@@ -64,7 +59,7 @@ TEST_F(LLVMFixture, StrConst) {
   block->addStmt(astBuilder.CreateReturn(0));
   CheckCodegen(std::move(rootClass));
 
-  const auto &globals = Runtime::instance().module().getGlobalList();
+  const auto &globals = JackRuntime.module().getGlobalList();
 
   EXPECT_TRUE(
       std::count_if(globals.begin(), globals.end(), [&](const auto &glob) {
@@ -134,7 +129,7 @@ TEST_F(LLVMFixture, LetStmt) {
   block->addStmt(astBuilder.CreateReturn(name));
 
   CheckCodegen<llvm::Value>(std::move(rootClass));
-  EXPECT_TRUE(Runtime::instance().run() == ExpValue);
+  EXPECT_TRUE(JackRuntime.run() == ExpValue);
 }
 
 TEST_F(LLVMFixture, WhileStmt) {
@@ -636,7 +631,7 @@ TEST_F(KeyboardTest, ReadInt) {
 // TODO(matt) move to generator tests
 TEST_F(LLVMFixture, BuiltinTypes) {
   // auto &Ctx =
-  // const_cast<llvm::LLVMContext&>(Runtime::instance().getContext());
+  // const_cast<llvm::LLVMContext&>(JackRuntime().getContext());
   //     EXPECT_TRUE(generator.getTypeByName("void") ==
   //     llvm::Type::getVoidTy(Ctx)); EXPECT_TRUE(generator.getTypeByName("int")
   //     == llvm::Type::getInt32Ty(Ctx));
@@ -644,8 +639,8 @@ TEST_F(LLVMFixture, BuiltinTypes) {
   //     llvm::Type::getInt8Ty(Ctx));
   //     EXPECT_TRUE(generator.getTypeByName("boolean") ==
   //     llvm::Type::getInt1Ty(Ctx));
-  EXPECT_TRUE(Runtime::instance().module().getTypeByName("Array") != nullptr);
-  EXPECT_TRUE(Runtime::instance().module().getTypeByName("String") != nullptr);
+  EXPECT_TRUE(JackRuntime.module().getTypeByName("Array") != nullptr);
+  EXPECT_TRUE(JackRuntime.module().getTypeByName("String") != nullptr);
 }
 
 TEST_F(LLVMFixture, StaticVariables) {}

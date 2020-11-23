@@ -72,7 +72,7 @@ int main(int argc, char *argv[]) {
                     [&, i = 1]() mutable { return argv[i++]; });  // NOLINT
   }
 
-  jcc::Runtime::instance().reset();
+  Runtime rt;
 
   std::vector<std::future<Result<NodePtr>>> futs;
   std::vector<std::string> fileList;
@@ -82,7 +82,7 @@ int main(int argc, char *argv[]) {
       type.reportError();
       exit(1);
     } else if (type == PathType::File) {
-      jcc::Runtime::instance().addAST(compileFile(input));
+      rt.addAST(compileFile(input));
     } else if (type == PathType::Directory) {
       printf("Compiling directory %s ...\n", input.c_str());
       fileList = getDirFiles(input);
@@ -119,7 +119,7 @@ int main(int argc, char *argv[]) {
     auto result = fut.get();
     if (!result.hasError()) {
       NodePtr &ast = result;
-      jcc::Runtime::instance().addAST(std::move(ast));
+      rt.addAST(std::move(ast));
     } else {
       result.reportError();
       hadError = true;
@@ -128,11 +128,11 @@ int main(int argc, char *argv[]) {
 
   if (!hadError) {
     // Generate code
-    jcc::Runtime::instance().codegen();
+    rt.codegen();
 
     // JIT
     printf("Running Main.main ...\n");
-    return jcc::Runtime::instance().run();
+    return rt.run();
   }
 
   return 1;

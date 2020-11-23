@@ -13,12 +13,15 @@ namespace jcc {
 using NodePtr = std::unique_ptr<jcc::ast::Node>;
 using ASTList = std::vector<NodePtr>;
 
-// Facade for the code generation and JIT of a Jack program. TODO This should not be a
-// singleton, but should own compilers and interpreters
+// Facade for the code generation and JIT of a Jack program. TODO This should
+// not be a singleton, but should own compilers and interpreters
 class Runtime {
 public:
-  static void init(std::istream &is, std::ostream &os);
-  static Runtime &instance();
+  Runtime(std::istream &is, std::ostream &os)
+      : m_context{std::make_unique<llvm::LLVMContext>()}, m_is{is}, m_os{os} {
+    reset();
+  }
+  Runtime() : Runtime(std::cin, std::cout) {}
 
   std::istream &istream() { return m_is; }
   std::ostream &ostream() { return m_os; }
@@ -26,10 +29,10 @@ public:
   llvm::Module &module();
   llvm::orc::JITDylib &engine();
 
-  Runtime(const Runtime &) = delete;
+  Runtime(const Runtime &other) = delete;
   Runtime &operator=(const Runtime &) = delete;
   Runtime(Runtime &&) = delete;
-  Runtime &operator=(Runtime &&) = delete;
+  Runtime &operator=(Runtime &&other) = delete;
 
   const llvm::LLVMContext &getContext() const { return *m_context; }
 
@@ -59,13 +62,16 @@ private:
   std::istream &m_is;
   std::ostream &m_os;
 
-  Runtime(std::istream &is, std::ostream &os)
-      : m_context{std::make_unique<llvm::LLVMContext>()}, m_is{is}, m_os{os} {}
-  Runtime() : Runtime(std::cin, std::cout) {}
-
   // Register the builtin functions for manipulating arrays, strings, output,
   // and the AST
   void registerBuiltins();
+
+  void registerTestAPI(llvm::Module *);
+  void registerArray(llvm::Module *);
+  void registerString(llvm::Module *);
+  void registerOutput(llvm::Module *);
+  void registerAST(llvm::Module *);
+  void registerInput(llvm::Module *);
 };
 
 }  // namespace jcc

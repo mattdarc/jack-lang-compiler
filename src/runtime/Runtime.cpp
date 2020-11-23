@@ -40,7 +40,6 @@ struct TestAPI : BuiltinType<void> {
 
 }  // namespace jcc::builtin
 
-namespace {
 using namespace jcc::builtin;
 using namespace jcc;
 
@@ -62,7 +61,7 @@ public:
   }
 };
 
-void registerTestAPI(llvm::Module *module) {
+void Runtime::registerTestAPI(llvm::Module *module) {
   TestAPIClass TestAPICls(module);
   TestAPICls.addFunction(TestAPIClass::toVar<String>, "inspectStr");
   TestAPICls.addFunction(TestAPIClass::toValueType<int>, "inspectInt");
@@ -70,7 +69,7 @@ void registerTestAPI(llvm::Module *module) {
   TestAPICls.addFunction(TestAPIClass::toValueType<bool>, "inspectBool");
 }
 
-void registerArray(llvm::Module *module) {
+void Runtime::registerArray(llvm::Module *module) {
   class ArrayClass : public BuiltinRegistrar<Array> {
   public:
     using Self::Self;
@@ -85,26 +84,26 @@ void registerArray(llvm::Module *module) {
   ACls.addFunction(ArrayClass::dispose, "dispose");
 }
 
-void registerAST(llvm::Module *module) {
+void Runtime::registerAST(llvm::Module *module) {
   class ASTNodeClass : public BuiltinRegistrar<ASTNode> {
   public:
     using Self::Self;
 
-    static void print(ASTNode n) {
-      Runtime::instance().ostream() << ast::PrettyPrinter::print(*n.impl);
+    static void print(Runtime *rt, ASTNode n) {
+      rt->ostream() << ast::PrettyPrinter::print(*n.impl);
     }
 
-    static ASTNode get() {
+    static ASTNode get(Runtime *rt) {
       // TODO(matt) this needs to be shared ownership
-      return ASTNode{Runtime::instance().getAST()};
+      return ASTNode{rt->getAST()};
     }
   } NodeCls(module);
 
-  NodeCls.addFunction(ASTNodeClass::print, "print");
-  NodeCls.addFunction(ASTNodeClass::get, "getRoot");
+  NodeCls.addRuntimeFunction(this, ASTNodeClass::print, "print");
+  NodeCls.addRuntimeFunction(this, ASTNodeClass::get, "getRoot");
 }
 
-void registerString(llvm::Module *module) {
+void Runtime::registerString(llvm::Module *module) {
   class StringClass : public BuiltinRegistrar<String> {
   public:
     using Self::Self;
@@ -153,65 +152,61 @@ void registerString(llvm::Module *module) {
   StrCls.addFunction(StringClass::ptrToString, "ptrtostr");
 }
 
-void registerOutput(llvm::Module *module) {
+void Runtime::registerOutput(llvm::Module *module) {
   class OutputClass : public BuiltinRegistrar<Output> {
   public:
     using Self::Self;
 
-    static void printChar(char c) { Runtime::instance().ostream() << c; }
+    static void printChar(Runtime *rt, char c) { rt->ostream() << c; }
 
-    static void printString(String str) {
-      Runtime::instance().ostream() << *str.impl;
+    static void printString(Runtime *rt, String str) {
+      rt->ostream() << *str.impl;
     }
 
-    static void printInt(int i) { Runtime::instance().ostream() << i; }
+    static void printInt(Runtime *rt, int i) { rt->ostream() << i; }
 
-    static void println() { Runtime::instance().ostream() << '\n'; }
+    static void println(Runtime *rt) { rt->ostream() << '\n'; }
 
   } OutCls(module);
 
-  OutCls.addFunction(OutputClass::printChar, "printChar");
-  OutCls.addFunction(OutputClass::printString, "printString");
-  OutCls.addFunction(OutputClass::printInt, "printInt");
-  OutCls.addFunction(OutputClass::println, "println");
+  OutCls.addRuntimeFunction(this, OutputClass::printChar, "printChar");
+  OutCls.addRuntimeFunction(this, OutputClass::printString, "printString");
+  OutCls.addRuntimeFunction(this, OutputClass::printInt, "printInt");
+  OutCls.addRuntimeFunction(this, OutputClass::println, "println");
 }
 
-void registerInput(llvm::Module *module) {
+void Runtime::registerInput(llvm::Module *module) {
   class InputClass : public BuiltinRegistrar<Input> {
   public:
     using Self::Self;
 
-    static String readLine(String msg) {
-      Runtime::instance().ostream() << *msg.impl;
+    static String readLine(Runtime *rt, String msg) {
+      rt->ostream() << *msg.impl;
 
       auto str = new std::string;
 
-      *str = std::accumulate(
-          std::istream_iterator<std::string>(Runtime::instance().istream()),
-          std::istream_iterator<std::string>(), std::string{},
-          [](std::string s, const std::string &inp) {
-            return std::move(s) + inp + " ";
-          });
+      *str =
+          std::accumulate(std::istream_iterator<std::string>(rt->istream()),
+                          std::istream_iterator<std::string>(), std::string{},
+                          [](std::string s, const std::string &inp) {
+                            return std::move(s) + inp + " ";
+                          });
       str->erase(str->size() - 1);
       return String{str};
     }
 
-    static int readInt(String msg) {
-      Runtime::instance().ostream() << *msg.impl;
+    static int readInt(Runtime *rt, String msg) {
+      rt->ostream() << *msg.impl;
 
       int v;
-      Runtime::instance().istream() >> v;
+      rt->istream() >> v;
       return v;
     }
   } InpCls(module);
 
-  InpCls.addFunction(InputClass::readLine, "readLine");
-  InpCls.addFunction(InputClass::readInt, "readInt");
+  InpCls.addRuntimeFunction(this, InputClass::readLine, "readLine");
+  InpCls.addRuntimeFunction(this, InputClass::readInt, "readInt");
 }
-
-static std::unique_ptr<Runtime> RTInstance;
-
-}  // namespace
 
 namespace jcc {
 
@@ -227,9 +222,9 @@ void Runtime::reset() {
   m_context.reset(new llvm::LLVMContext);
   m_gen = ast::LLVMGenerator::Create(*m_context);
   m_jit = exec::JIT::Create();
-  registerBuiltins();  // TODO: move this to separate module so we don't need
-                       // to keep generating. Once this is done we should be
-                       // able to parallelize it
+
+  // Initailize runtime and builtins
+  registerBuiltins();
 }
 
 void Runtime::addAST(std::unique_ptr<ast::Node> ast) {
@@ -243,11 +238,6 @@ void Runtime::registerBuiltins() {
   registerOutput(m_gen->module());
   registerAST(m_gen->module());
   registerInput(m_gen->module());
-}
-
-Runtime &Runtime::instance() { return *RTInstance; }
-void Runtime::init(std::istream &is, std::ostream &os) {
-  RTInstance.reset(new Runtime(is, os));
 }
 
 llvm::Module &Runtime::module() {
