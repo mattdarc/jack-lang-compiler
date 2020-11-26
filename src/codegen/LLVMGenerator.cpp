@@ -467,56 +467,6 @@ void LLVMGenerator::allocateArguments(llvm::Function *funcI,
   for (auto &arg : funcI->args()) { builder().CreateStore(&arg, (*alloc++)); }
 }
 
-// TODO(matt) this should be done in a pass on the Jack AST, not after passing
-// it to LLVM
-void removeAndCastReturns(llvm::Function *func) {
-  llvm::IRBuilder<> builder{func->getContext()};
-
-  // handle any early returns
-  llvm::Value *retVal = nullptr;
-  llvm::BasicBlock *retBB = nullptr;
-
-  std::vector<llvm::ReturnInst *> returns;
-  for (auto &bb : func->getBasicBlockList()) {
-    for (auto &inst : bb.getInstList()) {
-      if (auto *ret = llvm::dyn_cast<llvm::ReturnInst>(&inst)) {
-        returns.push_back(ret);
-      }
-    }
-  }
-
-  if (returns.empty()) { return; }
-
-  if (returns.size() > 1) {
-    // If there is a single return, then we don't need to do anything since
-    // it is at the end of the function
-    retBB = llvm::BasicBlock::Create(builder.getContext(), "ret", func);
-    auto RetTy = func->getFunctionType()->getReturnType();
-    if (!RetTy->isVoidTy()) {
-      builder.SetInsertPoint(&func->getEntryBlock().front());
-      retVal = builder.CreateAlloca(RetTy);
-    }
-
-    for (auto *ret : returns) {
-      if (ret->getNumOperands() > 0) {
-        // This should be handled during semantic analysis
-        assert(retVal &&
-               "Function returns void but return statement has operand");
-        builder.SetInsertPoint(ret);
-        builder.CreateStore(ret->getOperand(0), retVal);
-      }
-
-      llvm::ReplaceInstWithInst(ret, llvm::BranchInst::Create(retBB));
-    }
-
-    builder.SetInsertPoint(retBB);
-    if (retVal)
-      builder.CreateRet(builder.CreateLoad(retVal));
-    else
-      builder.CreateRetVoid();
-  }
-}
-
 template <typename FunctionType>
 llvm::Function *LLVMGenerator::visitFunction(FunctionType &decl) {
   std::vector<llvm::Type *> argTs;
@@ -542,9 +492,7 @@ llvm::Function *LLVMGenerator::visitFunction(FunctionType &decl) {
 
 void LLVMGenerator::visit(StaticDecl &decl) {
   auto funcI = visitFunction(decl);
-
   decl.getDefinition()->accept(*this);
-  removeAndCastReturns(funcI);
 
   if (llvm::verifyFunction(*funcI, &llvm::errs())) { InternalError(funcI); }
 
@@ -564,7 +512,6 @@ void LLVMGenerator::visit(ConstructorDecl &decl) {
 
   // codegen rest of the function
   decl.getDefinition()->accept(*this);
-  removeAndCastReturns(funcI);
 
   if (llvm::verifyFunction(*funcI, &llvm::errs())) { InternalError(funcI); }
 
@@ -573,9 +520,7 @@ void LLVMGenerator::visit(ConstructorDecl &decl) {
 
 void LLVMGenerator::visit(MethodDecl &decl) {
   auto funcI = visitFunction(decl);
-
   decl.getDefinition()->accept(*this);
-  removeAndCastReturns(funcI);
 
   if (llvm::verifyFunction(*funcI, &llvm::errs())) { InternalError(funcI); }
 

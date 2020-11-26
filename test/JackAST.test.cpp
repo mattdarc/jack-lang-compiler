@@ -645,7 +645,19 @@ TEST_F(LLVMFixture, BuiltinTypes) {
 
 TEST_F(LLVMFixture, StaticVariables) {}
 
-TEST_F(LLVMFixture, EarlyReturns) {}
+TEST_F(LLVMFixture, EarlyReturns) {
+  std::unique_ptr<Block> ifBlock = std::make_unique<Block>();
+  std::unique_ptr<Block> elseBlock = std::make_unique<Block>();
+
+  ifBlock->addStmt(astBuilder.CreateReturn(10));
+  elseBlock->addStmt(astBuilder.CreateReturn(20));
+
+  block->addStmt(astBuilder.CreateIf(std::make_unique<True>(),
+                                     std::move(ifBlock), std::move(elseBlock)));
+
+  CheckCodegen(std::move(rootClass));
+  CheckExecution(10);
+}
 
 TEST_F(LLVMFixture, ASTUtilities) {
   const std::string theNode = "node";

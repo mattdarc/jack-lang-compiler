@@ -88,13 +88,18 @@ public:
     return std::make_unique<BinaryOp>(op, std::move(i), std::move(j));
   }
 
+  auto CreateIf(std::unique_ptr<Node> ifCond, std::unique_ptr<Block> ifBlock,
+                std::unique_ptr<Block> elseBlock = nullptr) {
+    return std::make_unique<IfStmt>(std::move(ifCond), std::move(ifBlock),
+                                    std::move(elseBlock));
+  }
+
   auto CreateIf(char op, const std::string &s, int i,
                 std::unique_ptr<Block> ifBlock,
                 std::unique_ptr<Block> elseBlock = nullptr) {
-    return std::make_unique<IfStmt>(
-        std::make_unique<BinaryOp>(op, RValue(CreateIdentifier(s)),
-                                   std::make_unique<IntConst>(i)),
-        std::move(ifBlock), std::move(elseBlock));
+    return CreateIf(std::make_unique<BinaryOp>(op, RValue(CreateIdentifier(s)),
+                                               std::make_unique<IntConst>(i)),
+                    std::move(ifBlock), std::move(elseBlock));
   }
 
   auto CreateWhile(char op, const std::string &s, int i,
